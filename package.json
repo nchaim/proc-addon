@@ -1,9 +1,9 @@
 {
-    "name": "proc-addon", 
+    "name": "slowstartup", 
     "license": "MPL 2.0", 
     "author": "", 
     "version": "0.1", 
-    "fullName": "proc-addon", 
+    "fullName": "Slow Startup Logging", 
     "id": "jid1-gUSfgYrKkLgvkQ", 
-    "description": ""
+    "description": "Detect external causes of slow startups in Windows."
 }

@@ -1,10 +1,11 @@
-Components.utils.import("resource://gre/modules/ctypes.jsm"); 
+if(typeof ctypes == "undefined")
+  Components.utils.import("resource://gre/modules/ctypes.jsm"); 
 
-const ntdll = ctypes.open("Ntdll.dll");
-const psapi = ctypes.open("Psapi.dll");
-const kernel32 = ctypes.open("Kernel32.dll");
-const advapi32 = ctypes.open("Advapi32.dll");
-const versiondll = ctypes.open("version.dll");
+const lib_ntdll = ctypes.open("ntdll.dll");
+const lib_psapi = ctypes.open("psapi.dll");
+const lib_kernel32 = ctypes.open("kernel32.dll");
+const lib_advapi32 = ctypes.open("advapi32.dll");
+const lib_versiondll = ctypes.open("version.dll");
 
 const UNICODE_STRING = new ctypes.StructType("UNICODE_STRING", [
   {'Length': ctypes.unsigned_short},
@@ -72,13 +73,13 @@ const SYSTEM_BASIC_INFORMATION = new ctypes.StructType("SYSTEM_BASIC_INFORMATION
   {'ActiveProcessorsAffinityMask': ctypes.unsigned_long.ptr},
   {'NumberOfProcessors': ctypes.char} ]);
 
-const OSVERSIONINFOW = new ctypes.StructType("OSVERSIONINFOW", [
+const OSVERSIONINFO = new ctypes.StructType("OSVERSIONINFO", [
   {'dwOSVersionInfoSize': ctypes.uint32_t},
   {'dwMajorVersion': ctypes.uint32_t},
   {'dwMinorVersion': ctypes.uint32_t},
   {'dwBuildNumber': ctypes.uint32_t},
   {'dwPlatformId': ctypes.uint32_t},
-  {'usage': ctypes.jschar.array(128)} ]);
+  {'szCSDVersion': ctypes.jschar.array(128)} ]);
 
 const SERVICE_STATUS_PROCESS = new ctypes.StructType("SERVICE_STATUS_PROCESS", [
   {'dwServiceType': ctypes.uint32_t},
@@ -100,7 +101,7 @@ const LANGANDCODEPAGE = new ctypes.StructType("LANGANDCODEPAGE", [
   {'wLanguage': ctypes.uint16_t},
   {'wCodePage': ctypes.uint16_t} ]);
 
-const NtQuerySystemInformation = ntdll.declare("NtQuerySystemInformation", 
+const NtQuerySystemInformation = lib_ntdll.declare("NtQuerySystemInformation", 
   ctypes.winapi_abi,
   ctypes.long, // return
   ctypes.int, // SystemInformationClass
@@ -108,31 +109,31 @@ const NtQuerySystemInformation = ntdll.declare("NtQuerySystemInformation",
   ctypes.unsigned_long, // SystemInformationLength
   ctypes.unsigned_long.ptr); // ReturnLength
 
-const RtlGetVersion = ntdll.declare("RtlGetVersion", 
+const GetVersionExW = lib_kernel32.declare("GetVersionExW", 
   ctypes.winapi_abi,
-  ctypes.long, // return
-  OSVERSIONINFOW.ptr); // lpVersionInformation
+  ctypes.bool, // return
+  OSVERSIONINFO.ptr); // lpVersionInfo
 
-const OpenProcess = kernel32.declare("OpenProcess", 
+const OpenProcess = lib_kernel32.declare("OpenProcess", 
   ctypes.winapi_abi,
   ctypes.voidptr_t, // return
   ctypes.uint32_t, // dwDesiredAccess
   ctypes.bool, // bInheritHandle
   ctypes.uint32_t); // dwProcessId
 
-const GetProcessImageFileNameW = psapi.declare("GetProcessImageFileNameW", 
+const GetProcessImageFileNameW = lib_psapi.declare("GetProcessImageFileNameW", 
   ctypes.winapi_abi,
   ctypes.uint32_t, // return
   ctypes.voidptr_t, // hProcess
   ctypes.jschar.ptr, // lpImageFileName
   ctypes.uint32_t); // nSize
 
-const CloseHandle = kernel32.declare("CloseHandle", 
+const CloseHandle = lib_kernel32.declare("CloseHandle", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.voidptr_t); // hObject
 
-const EnumServicesStatusExW = advapi32.declare("EnumServicesStatusExW", 
+const EnumServicesStatusExW = lib_advapi32.declare("EnumServicesStatusExW", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.void_t.ptr, // hSCManager
@@ -146,36 +147,36 @@ const EnumServicesStatusExW = advapi32.declare("EnumServicesStatusExW",
   ctypes.uint32_t.ptr, // lpResumeHandle
   ctypes.jschar.ptr); // pszGroupName
 
-const OpenSCManagerW = advapi32.declare("OpenSCManagerW", 
+const OpenSCManagerW = lib_advapi32.declare("OpenSCManagerW", 
   ctypes.winapi_abi,
   ctypes.void_t.ptr, // return
   ctypes.jschar.ptr, // lpMachineName
   ctypes.jschar.ptr, // lpDatabaseName
   ctypes.uint32_t); // dwDesiredAccess
 
-const CloseServiceHandle = advapi32.declare("CloseServiceHandle", 
+const CloseServiceHandle = lib_advapi32.declare("CloseServiceHandle", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.void_t.ptr); // hSCObject
 
-const QueryDosDeviceW = kernel32.declare("QueryDosDeviceW", 
+const QueryDosDeviceW = lib_kernel32.declare("QueryDosDeviceW", 
   ctypes.winapi_abi,
   ctypes.uint32_t, // return
   ctypes.jschar.ptr, // lpDeviceName
   ctypes.jschar.ptr, // lpTargetPath
   ctypes.uint32_t); // ucchMax
 
-const GetLogicalDrives = kernel32.declare("GetLogicalDrives", 
+const GetLogicalDrives = lib_kernel32.declare("GetLogicalDrives", 
   ctypes.winapi_abi,
   ctypes.uint32_t); // return
 
-const GetFileVersionInfoSizeW = versiondll.declare("GetFileVersionInfoSizeW", 
+const GetFileVersionInfoSizeW = lib_versiondll.declare("GetFileVersionInfoSizeW", 
   ctypes.winapi_abi,
   ctypes.uint32_t, // return
   ctypes.jschar.ptr, // lptstrFilename
   ctypes.uint32_t.ptr); // lpdwHandle
 
-const GetFileVersionInfoW = versiondll.declare("GetFileVersionInfoW", 
+const GetFileVersionInfoW = lib_versiondll.declare("GetFileVersionInfoW", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.jschar.ptr, // lptstrFilename
@@ -183,13 +184,17 @@ const GetFileVersionInfoW = versiondll.declare("GetFileVersionInfoW",
   ctypes.uint32_t, // dwLen
   ctypes.void_t.ptr); // lpData
 
-const VerQueryValue = versiondll.declare("VerQueryValueW", 
+const VerQueryValue = lib_versiondll.declare("VerQueryValueW", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.void_t.ptr, // pBlock
   ctypes.jschar.ptr, // lpSubBlock
   ctypes.void_t.ptr.ptr, // lplpBuffer
   ctypes.unsigned_int.ptr); // puLen
+
+const GetCurrentProcessId = lib_kernel32.declare("GetCurrentProcessId", 
+  ctypes.winapi_abi,
+  ctypes.uint32_t); // return
 
 const STATUS_BUFFER_TOO_SMALL = 0xC0000023>>0;
 const STATUS_INFO_LENGTH_MISMATCH = 0xC0000004>>0;

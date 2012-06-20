@@ -1,42 +1,47 @@
-var numProcessors = null;
-var devPrefixes = null;
-var winVer = null;
+var _devPrefixes = null;
+var _winVer = null;
+var _pPID = null;
+var _enumBufSize = null;
 
 function enumProcesses(){
   var res = {};
-  if (typeof enumProcesses.bufferSize == 'undefined' || enumProcesses.bufferSize.value > 0x20000)
-    enumProcesses.bufferSize = new ctypes.unsigned_long(0x4000);
-  var buffer = ctypes.char.array(enumProcesses.bufferSize.value)();
+  if (!_enumBufSize || _enumBufSize.value > 0x20000)
+    _enumBufSize = new ctypes.unsigned_long(0x4000);
+  var buffer = ctypes.char.array(_enumBufSize.value)();
   while(true){
     var status = NtQuerySystemInformation(SystemProcessInformation, buffer, 
-      enumProcesses.bufferSize, enumProcesses.bufferSize.address());  
+      _enumBufSize, _enumBufSize.address());  
     if (status == STATUS_BUFFER_TOO_SMALL || status == STATUS_INFO_LENGTH_MISMATCH) {
-      buffer = ctypes.char.array(enumProcesses.bufferSize.value)();   
+      buffer = ctypes.char.array(_enumBufSize.value)();   
     } else break;
   }
-  if (status < 0) return false;
-  
+  if (status < 0) return null;
   var i = 0;
+  var time = new Date().getTime();
   while(true){
-    /*var*/ proc = ctypes.cast(buffer.addressOfElement(i), SYSTEM_PROCESS_INFORMATION.ptr).contents;
-    pid = cvalconv(proc.UniqueProcessId);
-    var pinfo = cstruct2arr(proc);
+    var proc = ctypes.cast(buffer.addressOfElement(i), SYSTEM_PROCESS_INFORMATION.ptr).contents;
+    pid = cValConv(proc.UniqueProcessId);
+    var pinfo = cStruct2arr(proc);
     pinfo["IOCount"] = pinfo.ReadOperationCount + pinfo.WriteOperationCount + pinfo.OtherOperationCount;
     pinfo["IOTransfer"] = pinfo.ReadTransferCount + pinfo.WriteTransferCount + pinfo.OtherTransferCount;
     if (pid == SYSTEM_IDLE_PROCESS_ID) 
       pinfo.KernelTime = getProcessorCounters().IdleTime;
     pinfo["CPUTime"] = pinfo.UserTime + pinfo.KernelTime;
+    pinfo["CurrentProcess"] = (curPID() == pid);
+    pinfo["Uptime"] = (time-(pinfo.CreateTime-116444736000000000)/10000).toFixed();
     res[pid] = pinfo;
     if (proc.NextEntryOffset == 0) break; 
     i += parseInt(proc.NextEntryOffset);
   }
+  _devPrefixes = null;
   return res;
 }
 
 function windowsVersion(){
-  var info = new OSVERSIONINFOW();
-  var status = RtlGetVersion(info.address());   
-  if (status < 0) return false;
+  var info = new OSVERSIONINFO();
+  info.dwOSVersionInfoSize = OSVERSIONINFO.size;
+  var status = GetVersionExW(info.address());   
+  if (status == 0) return null;
   return parseFloat(info.dwMajorVersion+"."+info.dwMinorVersion);
 }
 
@@ -45,8 +50,8 @@ function hImageFileName60(pid){
   var info = SYSTEM_PROCESS_ID_INFORMATION(pid, UNICODE_STRING(0, MAX_PATH, strBuf));
   var status = NtQuerySystemInformation(SystemProcessIdInformation, info.address(), 
     SYSTEM_PROCESS_ID_INFORMATION.size, null);  
-  if (status < 0) return false;
-  return cvalconv(info.ImageName);
+  if (status < 0) return null;
+  return cValConv(info.ImageName);
 }
 
 function hImageFileName50(pid){
@@ -54,24 +59,24 @@ function hImageFileName50(pid){
   var handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
   var status = GetProcessImageFileNameW(handle, strBuf, MAX_PATH);
   CloseHandle(handle);
-  if (status == 0) return false;
-  return cvalconv(strBuf); 
+  if (status == 0) return null;
+  return cValConv(strBuf); 
 }
 
 function imageFileName(pid){
   pid = parseInt(pid);
-  if (!winVer) winVer = windowsVersion();
-  var fn = (winVer < 6.0) ? hImageFileName50(pid) : hImageFileName60(pid);
+  if (!_winVer) _winVer = windowsVersion();
+  var fn = (_winVer < 6.0) ? hImageFileName50(pid) : hImageFileName60(pid);
   if (typeof fn == "string") fn = nt2dosName(fn);
   return fn;
 }
 
 function nt2dosName(name){
-   if(!devPrefixes) devPrefixes = devicePrefixes();
+   if(!_devPrefixes) _devPrefixes = devicePrefixes();
    name = name.replace(/^\\\?\\(UNC\\)?/i, "");
-   for(var pfx in devPrefixes){
+   for(var pfx in _devPrefixes){
      if (name.indexOf(pfx) ==  0)
-      {name = name.replace(pfx, devPrefixes[pfx]); break;}
+      {name = name.replace(pfx, _devPrefixes[pfx]); break;}
    }
    return name;
 }
@@ -93,14 +98,14 @@ function devicePrefixes(){
 function versionInfo(fname){
   var verStrs = ["CompanyName", "FileDescription", "FileVersion", "InternalName", 
     "LegalCopyright", "OriginalFilename", "ProductName", "ProductVersion"];
-  if(!fname || fname.match(/^\\\\/)) return false;
+  if(!fname || fname.match(/^\\\\/)) return null;
   var zero =  new ctypes.uint32_t();
   var fnameW = ctypes.jschar.array()(fname);
   var len = GetFileVersionInfoSizeW(fnameW, zero.address());
-  if(!len) return false;
+  if(!len) return null;
   var buffer = ctypes.char.array(len)();
   var ret = GetFileVersionInfoW(fnameW,  0, len, buffer);
-  if (!ret) return false;
+  if (!ret) return null;
   var ptrans = verInfoValue(buffer, "\\VarFileInfo\\Translation");
   var trans = ctypes.cast(ptrans, LANGANDCODEPAGE.ptr).contents;
   var fInfoStr = "\\StringFileInfo\\" + dec2hex(trans.wLanguage, 4) + 
@@ -118,7 +123,7 @@ function verInfoValue(pblock, bstr){
   var blen = ctypes.unsigned_int();
   var pbuf = new ctypes.voidptr_t();
   var res = VerQueryValue(pblock, verStr, pbuf.address(), blen.address());
-  if (!res || blen.value == 0) return false;
+  if (!res || blen.value == 0) return null;
   if (bstr.match(/^\\StringFileInfo/)) 
     return ctypes.cast(pbuf, ctypes.jschar.ptr).readString();
   else return pbuf;
@@ -126,7 +131,7 @@ function verInfoValue(pblock, bstr){
 
 function enumProcServices(){
   var handle = OpenSCManagerW(null, null, SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
-  if (!handle) return false;
+  if (!handle) return null;
   var bufferSize = new ctypes.uint32_t(0);
   var numSvc = new ctypes.uint32_t(0);
 
@@ -136,26 +141,29 @@ function enumProcServices(){
   res = EnumServicesStatusExW(handle, SC_ENUM_PROCESS_INFO, SERVICE_WIN32, 
     SERVICE_ACTIVE, buffer, bufferSize, bufferSize.address(), numSvc.address(), null, null);
   CloseServiceHandle(handle);
-  if (!res) return false; 
-  /*var*/ svcs = ctypes.cast(buffer, ENUM_SERVICE_STATUS_PROCESS.array(numSvc.value));
+  if (!res) return null; 
+  var svcs = ctypes.cast(buffer, ENUM_SERVICE_STATUS_PROCESS.array(numSvc.value));
   var res = {};
   for(var i = 0; i < svcs.length; i++){
-    var pid = parseInt(svcs[i].ServiceStatusProcess.dwProcessId.toString());
+    var svc = svcs[i];
+    var pid = parseInt(svc.ServiceStatusProcess.dwProcessId.toString());
     if(pid == 0) continue;
-    var s = cstruct2arr(svcs[i]);
     if (!(pid in res)) res[pid] = [];
-    res[pid].push(s);  
+    res[pid].push({
+      'Name': cValConv(svc.lpServiceName), 
+      'DisplayName': cValConv(svc.lpDisplayName)
+      }); 
   }
   return res;
 }
 
 function getProcessorCounters(){
   var res = {};
-  if(!numProcessors) numProcessors = getBasicInfo().NumberOfProcessors;
+  var numProcessors = getBasicInfo().NumberOfProcessors;
   var buffer = SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION.array(numProcessors)();
   var status = NtQuerySystemInformation(SystemProcessorPerformanceInformation, buffer, 
     SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION.size*numProcessors, null);  
-  if (status < 0) return false;
+  if (status < 0) return null;
   for(var pn in buffer[0]){
     res[pn] = 0;
     for(var i = 0; i < numProcessors; i++)
@@ -168,22 +176,27 @@ function getBasicInfo(){
   var sysInfo = new SYSTEM_BASIC_INFORMATION();
   var status = NtQuerySystemInformation(SystemBasicInformation, sysInfo.address(), 
     SYSTEM_BASIC_INFORMATION.size, null);  
-  if (status < 0) return false;
-  return cstruct2arr(sysInfo);
+  if (status < 0) return null;
+  return cStruct2arr(sysInfo);
 }
 
-function cstruct2arr(s){
+function curPID(){
+  if (!_pPID) _pPID = GetCurrentProcessId();
+  return _pPID;
+}
+
+function cStruct2arr(s){
   var res = {};
   for(var prop in s) {
-    var cv = cvalconv(s[prop]);
+    var cv = cValConv(s[prop]);
     if(typeof cv == "string" && cv.match(/^\w+\(.*,.*\)$/))
-      cv = cstruct2arr(s[prop]);
+      cv = cStruct2arr(s[prop]);
     res[prop] = cv;
   }
   return res;
 }
 
-function cvalconv(v){
+function cValConv(v){
   var constr = v.constructor.toString();
   if (typeof v == "number") return v;
   if (v instanceof ctypes.jschar.ptr || v instanceof ctypes.char.ptr) 
@@ -207,7 +220,7 @@ function delta(s1, s2, time){
 	var totCPUTime = 0;
 	var deltaList = ["UserTime", "KernelTime", "PageFaultCount", "ReadOperationCount", "WriteOperationCount", 
     "OtherOperationCount", "ReadTransferCount", "WriteTransferCount", "OtherTransferCount", "IOCount",
-    "IOTransfer", "CPUTime"];
+    "IOTransfer", "CPUTime", "WorkingSetPrivateSize"];
 	for(var pid in s1){
 	  if (!(pid in s2)) continue;
 	  res[pid] = {};

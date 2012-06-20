@@ -1,0 +1,146 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+  <base href="resource://jid1-gusfgyrkklgvkq-at-jetpack/slowstartup/data/" />
+  <link rel="stylesheet" href="ui/style.css" type="text/css" />
+  <script type="text/javascript" src="ui/jquery-1.7.2.min.js"> </script>
+  <script type="text/javascript" src="ui/jquery.tablesorter.js"> </script>
+</head>
+<body>
+<script type="application/javascript;version=1.8">
+  var _sHistory = null;
+  var sortInit = false;
+  
+  window.addEventListener("message", function(event) {
+    _sHistory = event.data;
+    dataReady();
+  }, false);
+  
+  function dataReady(){
+    var i = null;
+    for (i in _sHistory){
+      var sh = _sHistory[i];
+      el = $('#menu').prepend('<a class="item" onclick="selItem(this)" data-id="' + i + 
+        '"><i>' + formatDate(sh.time) + '</i><b>' + formatRunTime(sh.startupTime) + 
+        '</b></a>');
+    }
+    if (i != null) 
+      selItem($('.item:first').get(0));
+  }
+  
+  function selItem(el){
+    $('#item_sel').removeProp('id');
+    $(el).prop('id', 'item_sel');
+    var i = el.getAttribute("data-id");
+    var data = _sHistory[i].data;
+    if(!data) {
+      $('#proctable').hide();
+      $('#conth').html("No data logged for selected entry.");
+    } else {
+      var cnt = updateProcInfoTable(data);
+      $('#conth').html(cnt + " resource-intensive processes found.");
+    }
+  }
+  
+  function updateProcInfoTable(data){
+   $('#proctable tbody tr').remove();
+    var cnt = 0;
+    for (var pid in data){
+      var p = data[pid];
+      var svcList = [];
+      for(var i in p.Services) 
+        svcList.push(p.Services[i].DisplayName);
+      var row = [pid,
+        "<b>"+p.ImageName+"</b><br />"+
+          (p.FileDescription ? p.FileDescription+"<br />" : "") +
+          (p.CompanyName ? p.CompanyName+"<br />" : "") +
+          (p.FileVersion ? "Version: "+p.FileVersion+"<br />" : "") +
+          (svcList.length ? "Services: <br/><ul><li>"+ svcList.join("</li><li>") + 
+            "</li></ul>" : "") +
+          "Uptime: "+formatRunTime(p.Uptime),
+        (p.CPU*100).toFixed(2) + "%",
+        "Private working set: "+formatBytes(p.WorkingSetPrivateSize)+"<br />"+
+          "Page faults: "+addCommas(p.PageFaultCount),
+        "Read bytes: "+formatBytes(p.ReadTransferCount)+
+          ", delta: " +formatBytes(p.ReadTransferCountDelta.toFixed(0))+"/s<br/>"+
+          "Write bytes: "+formatBytes(p.WriteTransferCount)+
+          ", delta: " +formatBytes(p.WriteTransferCountDelta.toFixed(0))+"/s<br/>",
+        formatBytes(p.IOTransferDelta.toFixed(0)),
+        addCommas(p.IOCountDelta.toFixed(0)),
+        addCommas(p.PageFaultCountDelta.toFixed(0))
+      ];
+      $('#proctable tbody').prepend("<tr><td>"+row.join("</td><td>")+"</tr></td>");
+      cnt++;
+    }
+    $('#proctable').show();
+    if (!sortInit){
+      sortInit = true;
+      $("#proctable").tablesorter({debug: true, 
+        widgets: ['zebra'], 
+        headers: {3:{sorter:false}, 4:{sorter:false}, 5:{sorter:false}}
+      });
+    } else {
+      $("#proctable").trigger("update"); 
+      //$("#proctable").trigger("sorton",[[[0,0]]]); 
+      $("#proctable").trigger("applyWidgetId", ['zebra']);
+    }
+    return cnt;
+  }
+  
+  $(document).ready(function() { 
+    
+  });
+  
+  function formatDate(date){
+    var d = new Date(date);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).substr(-2) + '-' +
+      ('0'+d.getDate()).substr(-2) + ' ' + d.toTimeString().substr(0,8);
+  }
+  function formatRunTime(tMs){
+    if (tMs < 1000) return tMs + " ms";
+    if (tMs < 1000*600) return (tMs/1000).toFixed(2)  + " s";
+    var res = new Date(0,0,0,0,0,0,tMs).toTimeString().substr(0,8);
+    if (tMs > 86400000) res = (tMs/86400000).toFixed() + "d " + res;
+    return res;
+  }
+  function formatBytes(val, delta) {
+    var sizes = ["B", "KB", "MB", "GB", "TB"],  i = 0;
+    //if (val == 0) return val;
+    while(val >= 1024 && i < 4) {i++; val /= 1204;}
+    return (Math.round(val*100)/100) + " " + sizes[i];
+  }
+  function addCommas(num){
+    var re = /(\d+)(\d{3})/; num += "";
+    while (re.test(num))
+      num = num.replace(/(\d+)(\d{3})/, '$1,$2');
+    return num;
+  }
+</script>
+
+<div id="menuHeader">Slow Startup Log</div>
+<div id="menu"> </div>
+<div id="content">
+  
+<header id="conth"> </header>
+
+<table cellpadding="0" cellspacing="0" border="0" id="proctable" cellspacing="1" class="tablesorter" >
+  <thead>
+    <tr>
+    <th>PID</th>
+    <th>Process</th>
+    <th>CPU</th>
+    <th>Memory</th>
+    <th>IO</th>
+    <th>IO Transfer/sec</th>
+    <th>IO Ops/sec</th>
+    <th>Page Faults/sec</th>
+    </tr>
+  </thead>
+  <tbody>
+  </tbody>
+</table>
+</div>
+
+</body>
+</html>
