@@ -4,6 +4,7 @@
   <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
   <base href="resource://jid1-gusfgyrkklgvkq-at-jetpack/slowstartup/data/" />
   <link rel="stylesheet" href="ui/style.css" type="text/css" />
+  <script type="text/javascript" src="ui/utils.js"> </script>
   <script type="text/javascript" src="ui/jquery-1.7.2.min.js"> </script>
   <script type="text/javascript" src="ui/jquery.tablesorter.js"> </script>
 </head>
@@ -16,17 +17,20 @@
     _sHistory = event.data;
     dataReady();
   }, false);
-  
+
   function dataReady(){
     var i = null;
     for (i in _sHistory){
       var sh = _sHistory[i];
-      el = $('#menu').prepend('<a class="item" onclick="selItem(this)" data-id="' + i + 
+      var cls = sh.data ? " item_slow" : "";
+      el = $('#menu').prepend('<a class="item' + cls + '" onclick="selItem(this)" data-id="' + i + 
         '"><i>' + formatDate(sh.time) + '</i><b>' + formatRunTime(sh.startupTime) + 
         '</b></a>');
     }
     if (i != null) 
       selItem($('.item:first').get(0));
+    else
+      $('#menu').prepend('<a class="item_empty">Log empty</a>');
   }
   
   function selItem(el){
@@ -36,15 +40,16 @@
     var data = _sHistory[i].data;
     if(!data) {
       $('#proctable').hide();
-      $('#conth').html("No data logged for selected entry.");
+      $('#conth').html("No data logged for selected entry: startup time less than 12s.");
     } else {
       var cnt = updateProcInfoTable(data);
-      $('#conth').html(cnt + " resource-intensive processes found.");
+      $('#conth').html("<b>Registered " + cnt + " resource-intensive process"+(cnt==1?"":"es")+".</b>");
     }
   }
   
   function updateProcInfoTable(data){
-   $('#proctable tbody tr').remove();
+    $('#proctable tbody tr').remove();
+    var tbody = $('#proctable tbody').get(0);
     var cnt = 0;
     for (var pid in data){
       var p = data[pid];
@@ -57,33 +62,44 @@
           (p.CompanyName ? p.CompanyName+"<br />" : "") +
           (p.FileVersion ? "Version: "+p.FileVersion+"<br />" : "") +
           (svcList.length ? "Services: <br/><ul><li>"+ svcList.join("</li><li>") + 
-            "</li></ul>" : "") +
-          "Uptime: "+formatRunTime(p.Uptime),
+              "</li></ul>" : "") +
+            "Uptime: "+formatRunTime(p.Uptime),
         (p.CPU*100).toFixed(2) + "%",
         "Private working set: "+formatBytes(p.WorkingSetPrivateSize)+"<br />"+
-          "Page faults: "+addCommas(p.PageFaultCount),
+          "Page faults: "+formatNum(p.PageFaultCount)+
+          ", delta: " +formatNum(p.PageFaultCountDelta)+"<br/>"+
+         "Hard faults: "+formatNum(p.HardFaultCount)+
+          ", delta: " +formatNum(p.HardFaultCountDelta)+"<br/>",
         "Read bytes: "+formatBytes(p.ReadTransferCount)+
-          ", delta: " +formatBytes(p.ReadTransferCountDelta.toFixed(0))+"/s<br/>"+
+          ", delta: " +formatByteRate(p.ReadTransferCountDelta)+"<br/>"+
           "Write bytes: "+formatBytes(p.WriteTransferCount)+
-          ", delta: " +formatBytes(p.WriteTransferCountDelta.toFixed(0))+"/s<br/>",
-        formatBytes(p.IOTransferDelta.toFixed(0)),
-        addCommas(p.IOCountDelta.toFixed(0)),
-        addCommas(p.PageFaultCountDelta.toFixed(0))
+          ", delta: " +formatByteRate(p.WriteTransferCountDelta)+"<br/>"+
+          "Total bytes: "+formatBytes(p.IOTransfer)+
+          ", delta: " +formatByteRate(p.IOTransferDelta)+"<br/>",
+        formatByteRate(p.IOTransferDelta),
+        formatNum(p.IOCountDelta),
+        formatNum(p.PageFaultCountDelta)
       ];
-      $('#proctable tbody').prepend("<tr><td>"+row.join("</td><td>")+"</tr></td>");
+      var rowSortVal = [null, null, null, p.WorkingSetPrivateSize, p.IOTransfer, p.IOTransferDelta,
+        p.IOCountDelta, p.PageFaultCountDelta];
+      var tr = tbody.insertRow(-1);
+      for(var i in row){
+        var cell = tr.insertCell(i);
+        cell.innerHTML = row[i];
+        if (rowSortVal[i] !== null)
+          cell.setAttribute("data-sortval", escape(rowSortVal[i]));
+      }
+      if (p.CurrentProcess) tr.id = "tr_curproc";
       cnt++;
     }
     $('#proctable').show();
     if (!sortInit){
       sortInit = true;
       $("#proctable").tablesorter({debug: true, 
-        widgets: ['zebra'], 
-        headers: {3:{sorter:false}, 4:{sorter:false}, 5:{sorter:false}}
+        widgets: ['zebra'], sortList: [[5,0]],
       });
     } else {
       $("#proctable").trigger("update"); 
-      //$("#proctable").trigger("sorton",[[[0,0]]]); 
-      $("#proctable").trigger("applyWidgetId", ['zebra']);
     }
     return cnt;
   }
@@ -92,49 +108,36 @@
     
   });
   
-  function formatDate(date){
-    var d = new Date(date);
-    return d.getFullYear() + '-' + ('0' + (d.getMonth()+1)).substr(-2) + '-' +
-      ('0'+d.getDate()).substr(-2) + ' ' + d.toTimeString().substr(0,8);
-  }
-  function formatRunTime(tMs){
-    if (tMs < 1000) return tMs + " ms";
-    if (tMs < 1000*600) return (tMs/1000).toFixed(2)  + " s";
-    var res = new Date(0,0,0,0,0,0,tMs).toTimeString().substr(0,8);
-    if (tMs > 86400000) res = (tMs/86400000).toFixed() + "d " + res;
-    return res;
-  }
-  function formatBytes(val, delta) {
-    var sizes = ["B", "KB", "MB", "GB", "TB"],  i = 0;
-    //if (val == 0) return val;
-    while(val >= 1024 && i < 4) {i++; val /= 1204;}
-    return (Math.round(val*100)/100) + " " + sizes[i];
-  }
-  function addCommas(num){
-    var re = /(\d+)(\d{3})/; num += "";
-    while (re.test(num))
-      num = num.replace(/(\d+)(\d{3})/, '$1,$2');
-    return num;
-  }
+  $.tablesorter.addParser({
+    id: "sortval",
+    is: function(s, table, cell) {
+      return cell.hasAttribute("data-sortval");
+    },
+    format: function(s, table, cell) {
+      return parseFloat(cell.getAttribute("data-sortval"));
+    },
+    type: "numeric"
+  });
+  
 </script>
 
 <div id="menuHeader">Slow Startup Log</div>
 <div id="menu"> </div>
 <div id="content">
-  
-<header id="conth"> </header>
 
-<table cellpadding="0" cellspacing="0" border="0" id="proctable" cellspacing="1" class="tablesorter" >
+<header id="conth">Waiting...</header>
+
+<table cellpadding="0" cellspacing="0" border="0" id="proctable" cellspacing="1" class="tablesorter" style="display:none">
   <thead>
     <tr>
     <th>PID</th>
     <th>Process</th>
     <th>CPU</th>
-    <th>Memory</th>
-    <th>IO</th>
-    <th>IO Transfer/sec</th>
-    <th>IO Ops/sec</th>
-    <th>Page Faults/sec</th>
+    <th data-sorter="sortval">Memory</th>
+    <th data-sorter="sortval">IO</th>
+    <th data-sorter="sortval">Tot IO/sec</th>
+    <th data-sorter="sortval">Tot IO Ops/sec</th>
+    <th data-sorter="sortval">Page Faults/sec</th>
     </tr>
   </thead>
   <tbody>

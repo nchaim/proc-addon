@@ -1,0 +1,36 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+  <base href="resource://jid1-gusfgyrkklgvkq-at-jetpack/slowstartup/data/" />
+  <script type="text/javascript" src="ui/utils.js"> </script></head>
+  <style type="text/css"> 
+    * {font-family:consolas,monospace;}
+    body {font-size:75%}
+  </style>
+<body>
+<pre>Waiting...</pre>
+<script type="application/javascript;version=1.8">
+  var cont = document.getElementsByTagName("pre")[0];
+  window.addEventListener("message", dataReady, false);
+  
+  function dataReady(event){
+    for(var i = event.data.length-1; i>=0; i--)
+      if(event.data[i].data) {var ss = event.data[i]; break;}
+    if (i < 0) {cont.innerHTML = "No slow startup detected"; return;}
+    res = "Slow startup on "+formatDate(ss.time)+" ("+formatRunTime(ss.startupTime)+")\n";
+    res += "Resource-intensive processes:\n";
+    for (var pid in ss.data){
+      var p = ss.data[pid];
+      res += p.ImageName+(p.CurrentProcess?"*":"")+"\n";
+      res += "-  CPU: "+(p.CPU*100).toFixed(2) + "%\n";
+      res += "-  Memory: "+ formatBytes(p.WorkingSetPrivateSize) + "\n";
+      res += "-  Page Faults: "+ formatNum(p.PageFaultCount) + " (" + formatNum(p.PageFaultCountDelta) +"/sec)\n";
+      res += "-  Hard Faults: "+ formatNum(p.HardFaultCount) + " (" + formatNum(p.HardFaultCountDelta) +"/sec)\n";
+      res += "-  I/O: "+ formatBytes(p.IOTransfer) + " (" + formatByteRate(p.IOTransferDelta) +")\n";
+    }
+    cont.innerHTML = res;
+  }
+</script>
+</body>
+</html>

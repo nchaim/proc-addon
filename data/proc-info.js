@@ -18,21 +18,26 @@ function enumProcesses(){
   if (status < 0) return null;
   var i = 0;
   var time = new Date().getTime();
+  var processor = getProcessorCounters();
   while(true){
     var proc = ctypes.cast(buffer.addressOfElement(i), SYSTEM_PROCESS_INFORMATION.ptr).contents;
     pid = cValConv(proc.UniqueProcessId);
-    var pinfo = cStruct2arr(proc);
-    pinfo["IOCount"] = pinfo.ReadOperationCount + pinfo.WriteOperationCount + pinfo.OtherOperationCount;
-    pinfo["IOTransfer"] = pinfo.ReadTransferCount + pinfo.WriteTransferCount + pinfo.OtherTransferCount;
+    var pinfo = cValConv(proc);
+    pinfo.IOCount = pinfo.ReadOperationCount + pinfo.WriteOperationCount + pinfo.OtherOperationCount;
+    pinfo.IOTransfer = pinfo.ReadTransferCount + pinfo.WriteTransferCount + pinfo.OtherTransferCount;
     if (pid == SYSTEM_IDLE_PROCESS_ID) 
-      pinfo.KernelTime = getProcessorCounters().IdleTime;
-    pinfo["CPUTime"] = pinfo.UserTime + pinfo.KernelTime;
-    pinfo["CurrentProcess"] = (curPID() == pid);
-    pinfo["Uptime"] = (time-(pinfo.CreateTime-116444736000000000)/10000).toFixed();
+      pinfo.KernelTime = processor.IdleTime;
+    pinfo.CPUTime = pinfo.UserTime + pinfo.KernelTime;
+    pinfo.CurrentProcess = (curPID() == pid) || (pinfo.InheritedFromUniqueProcessId == curPID());
+    pinfo.Uptime = (time-(pinfo.CreateTime-116444736000000000)/10000).toFixed();
     res[pid] = pinfo;
     if (proc.NextEntryOffset == 0) break; 
     i += parseInt(proc.NextEntryOffset);
   }
+  var pi = cValConv(new SYSTEM_PROCESS_INFORMATION());
+  pi.CPUTime = pi.KernelTime = (processor.InterruptTime + processor.DpcTime);
+  pi.IOCount = pi.IOTransfer = pi.Uptime = 0; pi.CurrentProcess = false;
+  pi.UniqueProcessId = -1; pi.ImageName = "Interrupts"; res[-1] = pi;
   _devPrefixes = null;
   return res;
 }
@@ -67,11 +72,11 @@ function imageFileName(pid){
   pid = parseInt(pid);
   if (!_winVer) _winVer = windowsVersion();
   var fn = (_winVer < 6.0) ? hImageFileName50(pid) : hImageFileName60(pid);
-  if (typeof fn == "string") fn = nt2dosName(fn);
+  if (typeof fn == "string") fn = ntToDosName(fn);
   return fn;
 }
 
-function nt2dosName(name){
+function ntToDosName(name){
    if(!_devPrefixes) _devPrefixes = devicePrefixes();
    name = name.replace(/^\\\?\\(UNC\\)?/i, "");
    for(var pfx in _devPrefixes){
@@ -177,7 +182,15 @@ function getBasicInfo(){
   var status = NtQuerySystemInformation(SystemBasicInformation, sysInfo.address(), 
     SYSTEM_BASIC_INFORMATION.size, null);  
   if (status < 0) return null;
-  return cStruct2arr(sysInfo);
+  return cValConv(sysInfo);
+}
+
+function getPerformanceInfo(){
+  perfInfo = new SYSTEM_PERFORMANCE_INFORMATION();
+  var status = NtQuerySystemInformation(SystemPerformanceInformation, perfInfo.address(), 
+    SYSTEM_PERFORMANCE_INFORMATION.size, null);  
+  if (status < 0) return null;
+  return cValConv(perfInfo);
 }
 
 function curPID(){
@@ -185,19 +198,8 @@ function curPID(){
   return _pPID;
 }
 
-function cStruct2arr(s){
-  var res = {};
-  for(var prop in s) {
-    var cv = cValConv(s[prop]);
-    if(typeof cv == "string" && cv.match(/^\w+\(.*,.*\)$/))
-      cv = cStruct2arr(s[prop]);
-    res[prop] = cv;
-  }
-  return res;
-}
-
 function cValConv(v){
-  var constr = v.constructor.toString();
+  if (v == null) return null;
   if (typeof v == "number") return v;
   if (v instanceof ctypes.jschar.ptr || v instanceof ctypes.char.ptr) 
     return v.isNull() ? "" : v.readString();
@@ -205,9 +207,17 @@ function cValConv(v){
     return v.Buffer.isNull() ? "" : v.Buffer.readString(); 
   if (v instanceof ctypes.UInt64 || v instanceof ctypes.Int64) 
     return parseInt(v);
-  if (constr.match(/\*$/)) return v.toString().match(/0x[0-9a-f]+/i)[0];   
-  if (constr.match(/(char|jschar)\[\d+\]$/)) 
-    return v.isNull() ? "" : v.readString();
+  var constr = v.constructor.toString();
+  if (constr.match(/\*$/)) return v.toString().match(/0x[0-9a-f]+/i)[0];
+  if (constr.match(/(char|jschar)\[\d+\]$/)) return v.readString();
+  if (constr.match(/\[\d+\]$/) && typeof v.length != 'undefined') {
+    var arr = [];
+    for(var i = 0; i < v.length; i++) arr[i] = cValConv(v[i]);
+    return arr;
+  }
+  var obj = {}, prop = null;
+  for(prop in v) obj[prop] = cValConv(v[prop]);
+  if (prop != null) return obj;
   return v.toString();
 }
 
@@ -218,9 +228,9 @@ function dec2hex(num, w){
 function delta(s1, s2, time){
   var res = {};
 	var totCPUTime = 0;
-	var deltaList = ["UserTime", "KernelTime", "PageFaultCount", "ReadOperationCount", "WriteOperationCount", 
-    "OtherOperationCount", "ReadTransferCount", "WriteTransferCount", "OtherTransferCount", "IOCount",
-    "IOTransfer", "CPUTime", "WorkingSetPrivateSize"];
+	var deltaList = ["UserTime", "KernelTime", "PageFaultCount", "HardFaultCount", "ReadOperationCount", 
+	"WriteOperationCount", "OtherOperationCount", "ReadTransferCount", "WriteTransferCount", "OtherTransferCount", 
+	 "IOCount", "IOTransfer", "CPUTime", "WorkingSetPrivateSize"];
 	for(var pid in s1){
 	  if (!(pid in s2)) continue;
 	  res[pid] = {};
