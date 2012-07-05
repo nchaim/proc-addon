@@ -14,7 +14,7 @@
   var sortInit = false;
   
   window.addEventListener("message", function(event) {
-    _sHistory = event.data;
+    _sHistory = JSON.parse(event.data);
     dataReady();
   }, false);
 
@@ -24,7 +24,7 @@
     for (i in _sHistory){
       var sh = _sHistory[i];
       var cls = sh.data ? " item_slow" : "";
-      el = $('#menu').prepend('<a class="item' + cls + '" onclick="selItem(this)" data-id="' + i + 
+      var el = $('#menu').prepend('<a class="item' + cls + '" onclick="selItem(this)" data-id="' + i + 
         '"><i>' + formatDate(sh.time) + '</i><b>' + formatRunTime(sh.startupTime) + 
         '</b></a>');
     }
@@ -55,12 +55,13 @@
     for (var pid in data){
       var p = data[pid];
       var svcList = [];
-      for(var i in p.Services) 
-        svcList.push(p.Services[i].DisplayName);
+      if (p.Services)
+        for(var i in p.Services) 
+          svcList.push(escapeTags(p.Services[i].DisplayName));
       var row = [pid,
-        "<b>"+p.ImageName+"</b><br />"+
-          (p.FileDescription ? p.FileDescription+"<br />" : "") +
-          (p.CompanyName ? p.CompanyName+"<br />" : "") +
+        "<b>"+ escapeTags(p.ImageName)+"</b><br />"+
+          (p.FileDescription ? escapeTags(p.FileDescription)+"<br />" : "") +
+          (p.CompanyName ? escapeTags(p.CompanyName)+"<br />" : "") +
           (p.FileVersion ? "Version: "+p.FileVersion+"<br />" : "") +
           (svcList.length ? "Services: <br/><ul><li>"+ svcList.join("</li><li>") + 
               "</li></ul>" : "") +

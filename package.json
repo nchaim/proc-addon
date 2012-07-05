@@ -1,9 +1,9 @@
 {
     "name": "slowstartup", 
     "license": "MPL 2.0", 
-    "author": "", 
-    "version": "0.1", 
+    "author": "Nicolas Chaim", 
+    "version": "0.11", 
     "fullName": "Slow Startup Logging", 
     "id": "jid1-gUSfgYrKkLgvkQ", 
-    "description": "Detect external causes of slow startups in Windows."
+    "description": "Help determine external causes of slow startups in Windows."
 }

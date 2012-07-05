@@ -261,7 +261,7 @@ const GetFileVersionInfoW = lib_versiondll.declare("GetFileVersionInfoW",
   ctypes.uint32_t, // dwLen
   ctypes.void_t.ptr); // lpData
 
-const VerQueryValue = lib_versiondll.declare("VerQueryValueW", 
+const VerQueryValueW = lib_versiondll.declare("VerQueryValueW", 
   ctypes.winapi_abi,
   ctypes.bool, // return
   ctypes.void_t.ptr, // pBlock

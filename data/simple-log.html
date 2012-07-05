@@ -15,8 +15,9 @@
   window.addEventListener("message", dataReady, false);
   
   function dataReady(event){
-    for(var i = event.data.length-1; i>=0; i--)
-      if(event.data[i].data) {var ss = event.data[i]; break;}
+    var data = JSON.parse(event.data);
+    for(var i = data.length-1; i>=0; i--)
+      if(data[i].data) {var ss = data[i]; break;}
     if (i < 0) {cont.innerHTML = "No slow startup detected"; return;}
     res = "Slow startup on "+formatDate(ss.time)+" ("+formatRunTime(ss.startupTime)+")\n";
     res += "Resource-intensive processes:\n";

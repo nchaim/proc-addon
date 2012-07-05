@@ -38,6 +38,8 @@ function merge(a1, a2){
 self.onmessage = function(event) {
   if (!windowsVersion())
     self.postMessage(null);
-  else
-    procSnapshot(event.data[0], event.data[1]);
+  else {
+    var data = JSON.parse(event.data);
+    procSnapshot(data[0], data[1]);
+  }
 }

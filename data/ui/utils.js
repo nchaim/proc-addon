@@ -27,3 +27,6 @@ function formatNum(num){
     num = num.replace(/(\d+)(\d{3})/, '$1,$2');
   return num;
 }
+function escapeTags(str){
+  return str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+}
